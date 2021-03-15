@@ -1,3 +1,5 @@
+'use strict';
+
 const IngApi = require('./IngApi');
 
 main();

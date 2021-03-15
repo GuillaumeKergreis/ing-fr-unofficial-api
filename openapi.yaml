@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: ING FR Unofficial API
+  description: This openapi specification file describe the available endpoints for the ING API.
+    This API is used by the official ING web application to communicate with the ING backend.
+    ING does not provide any support or documentation for this API as it should be only used by their mobile app and their website.
+    This file is the result of a long reverse-engineering work.
+    **Use it at your own risks**.
+  contact:
+    name: Guillaume Kergreis
+    email: guillaume.kergreis@gmail.com
+  version: 1.0.0
+
+servers:
+  - url: 'https://m.ing.fr/secure/api-v1'
+  - url: 'https://m.ing.fr/saveinvestapi/v1'
+tags:
+  - name: login
+    externalDocs:
+      description: 'Server to use'
+      url: https://m.ing.fr/secure/api-v1
+  - name: account
+    externalDocs:
+      description: 'Server to use'
+      url: https://m.ing.fr/secure/api-v1
+  - name: card
+    externalDocs:
+      description: 'Server to use'
+      url: https://m.ing.fr/secure/api-v1
+  - name: customer
+    externalDocs:
+      description: 'Server to use'
+      url: https://m.ing.fr/secure/api-v1
+  - name: save and invest
+    externalDocs:
+      description: 'Server to use'
+      url: https://m.ing.fr/saveinvestapi/v1
+  - name: terms and conditions
+    externalDocs:
+      description: 'Server to use'
+      url: https://m.ing.fr/secure/api-v1
+
+paths:
+  /login/cif?v2=true:
+    post:
+      tags:
+        - login
+      summary: Post the customerId and the birthdate to complete the first authentication step
+      responses:
+        200:
+          description: Login successful
+      operationId: postLogin
+
+components:
+  schemas:
+    Account:
+      type: object
+      properties:
+        uid:
+          type: string
+
+

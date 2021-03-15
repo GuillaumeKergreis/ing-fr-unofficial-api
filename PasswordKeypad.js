@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 
 const Jimp = require("jimp");
 const Util = require('./Util');
@@ -10,11 +10,14 @@ class PasswordKeypad {
 
     /**
      * Create a new PasswordKeypad instance
-     * @param {String|Buffer} keypadImage
+     * @param {string|Buffer} keypadImage
+     * @param {number} sizeMultiplicator
      */
-    constructor(keypadImage) {
+    constructor(keypadImage, sizeMultiplicator = 1) {
 
         this.keypadImage = keypadImage;
+        // TODO : Deduce the sizeMultiplication from the image
+        this.sizeMultiplication = sizeMultiplicator; // Original keypad size is (484, 190)
 
         this.digitsPositions = [
             {x: 3, y: 3, width: 90, height: 88},
@@ -33,7 +36,7 @@ class PasswordKeypad {
 
     /**
      * Returns the ordered digits contained in the password keypad
-     * @return {Promise<Array<Number>>}
+     * @return {Promise<Array<number>>}
      */
     async getDigits() {
 
@@ -50,11 +53,11 @@ class PasswordKeypad {
         for (const d of Util.range(numberOfDigits)) {
             const jimpKeypadImage = await Jimp.read(this.keypadImage);
             const digit = await jimpKeypadImage.crop(
-                this.digitsPositions[d].x,
-                this.digitsPositions[d].y,
-                this.digitsPositions[d].width,
-                this.digitsPositions[d].height
-            );
+                this.digitsPositions[d].x * this.sizeMultiplication,
+                this.digitsPositions[d].y * this.sizeMultiplication,
+                this.digitsPositions[d].width * this.sizeMultiplication,
+                this.digitsPositions[d].height * this.sizeMultiplication
+            ).resize(90, 88);
             keypadDigits.push(digit);
         }
 
@@ -79,9 +82,9 @@ class PasswordKeypad {
 
     /**
      * Returns the click positions on the keypad to enter a given password
-     * @param {Array<Number>} missingPasswordDigitsPositions
-     * @param {String} password
-     * @return {Promise<Array<Array<Number>>>}
+     * @param {Array<number>} missingPasswordDigitsPositions
+     * @param {string} password
+     * @return {Promise<Array<Array<number>>>}
      */
     async getClicksPositions(missingPasswordDigitsPositions, password) {
 
@@ -99,8 +102,8 @@ class PasswordKeypad {
 
             const digitIndexInKeypad = digits.indexOf(digitToClick);
 
-            const clickPositionX = this.digitsPositions[digitIndexInKeypad].x + (Math.random() * this.digitsPositions[digitIndexInKeypad].width);
-            const clickPositionY = this.digitsPositions[digitIndexInKeypad].y + (Math.random() * this.digitsPositions[digitIndexInKeypad].height);
+            const clickPositionX = (this.digitsPositions[digitIndexInKeypad].x * this.sizeMultiplication) + (Math.random() * this.digitsPositions[digitIndexInKeypad].width * this.sizeMultiplication);
+            const clickPositionY = (this.digitsPositions[digitIndexInKeypad].y * this.sizeMultiplication) + (Math.random() * this.digitsPositions[digitIndexInKeypad].height * this.sizeMultiplication);
 
             clickPositions.push([clickPositionX, clickPositionY]);
         }
