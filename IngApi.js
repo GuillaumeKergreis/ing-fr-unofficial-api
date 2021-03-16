@@ -14,6 +14,13 @@ class IngApi {
         ADD_TRANSFER_BENEFICIARY: 'ADD_TRANSFER_BENEFICIARY'
     };
 
+    ErrorCode = {
+        EXTERNAL_ACCOUNT: {
+            IBAN_BAD_FORMAT: 'EXTERNAL_ACCOUNT.IBAN_BAD_FORMAT',
+            EXTERNAL_ACCOUNT_ALREADY_EXISTS: 'EXTERNAL_ACCOUNT.EXTERNAL_ACCOUNT_ALREADY_EXISTS'
+        }
+    };
+
     /**
      * Create a new IngApi instance
      * @param {string} customerId
@@ -33,7 +40,12 @@ class IngApi {
             saveInvestToken: null
         };
 
-        this.transferRequest = null;
+        // TODO : manage better this side effect
+        this.validationRequest = {
+            transactionRequest: null,
+            externalAccountsRequest: null
+        };
+
     }
 
     /**
@@ -96,7 +108,7 @@ class IngApi {
 
     /**
      * Returns the accounts
-     * @return {Promise<Object>}
+     * @return
      */
     async getAccounts() {
         return await this.callIngSecureApi('accounts');
@@ -186,7 +198,7 @@ class IngApi {
      * @param {string} accountId
      * @param {number} startAt - transactionId
      * @param {number} limit
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{id: string, effectiveDate: string, accountingDate: string, detail: string, amount: number, transcodeNeedCustomerAction: boolean, type: string, isOldBankCode: boolean, sameMonthAsPrevious: boolean, sameDateAsPrevious: boolean, sameDateAsNext: boolean}>>}
      */
     async getAccountTransactions(accountId, startAt = 0, limit = 50) {
         return await this.callIngSecureApi(`accounts/${accountId}/transactions/after/${startAt}/limit/${limit}`);
@@ -297,7 +309,7 @@ class IngApi {
 
     /**
      * Returns the future transfers
-     * @return {Promise<Object>}
+     * @return {Promise<{pendingTransfers: Array<Object>, mobileReccuringTransfers: Array<Object>, nbPendingTransfers: number}>}
      */
     async getFutureTransfers() {
         return await this.callIngSecureApi(`futureTransfers`);
@@ -322,7 +334,7 @@ class IngApi {
     /**
      * Returns the direct debit authorizations (SDD mandates)
      * @param {string} accountId
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{label: string, nneCode: string, uid: string, authorizationId: string, creditorId: string, validityStartDate: string, sepa: boolean, status: {code: string, label: string}, scheme: {code: string, label: string}, creditorBlocked: boolean}>>}
      */
     async getAccountDirectDebitAuthorizations(accountId) {
         return await this.callIngSecureApi(`accounts/${accountId}/directDebits/authorizations`);
@@ -348,7 +360,7 @@ class IngApi {
 
     /**
      * Returns the external accounts beneficiaries
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{uid: string, label: string, owner: string, type: {code: string, label: string}, bankName: string, bic: string, inGoodStanding: boolean, hasPositiveBalance: boolean}>>}
      */
     async getExternalAccountsBeneficiaries() {
         return await this.callIngSecureApi(`externalAccounts/beneficiaries`);
@@ -356,7 +368,7 @@ class IngApi {
 
     /**
      * Returns the possible verification channels (One Time Password) to perform a sensitive operation (Mobile phone)
-     * @param {string} sensitiveOperationType (ADD_TRANSFER_BENEFICIARY, DISPLAY_TRANSACTIONS)
+     * @param {string} sensitiveOperationType
      * @return {Promise<Array<{phone: string, type: string}>>}
      */
     async getSensitiveOperationOneTimePasswordChannels(sensitiveOperationType) {
@@ -437,12 +449,13 @@ class IngApi {
      * Validate a sensitive operation action posting password missing digits positions
      * @param {Array<Array<Number>>} clickPositions
      * @param {string} sensitiveOperationAction
-     * @param {{fromAccount: string, toAccount: string, amount: number, label: string, executionDate: string} | null} transferRequest
+     * @param {{fromAccount: string, toAccount: string, amount: number, label: string, executionDate: string} | {accountHolderName: string, bankName:string, bic: string, iban: string} | null} request
      * @return {Promise<{validated: boolean, secretCode: string, executed: boolean}>}
      */
-    async validatePinSensitiveOperationAction(clickPositions, sensitiveOperationAction, transferRequest = null) {
+    async validatePinSensitiveOperationAction(clickPositions, sensitiveOperationAction, request = null) {
         const body = {keyPad: {clickPositions: clickPositions}, sensitiveOperationAction: sensitiveOperationAction};
-        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && transferRequest) body.transactionRequest = transferRequest
+        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transactionRequest = request
+        else if (sensitiveOperationAction === this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY && request) body.externalAccountsRequest = request
         return await this.callIngSecureApi('sca/validatePin', 'POST', body);
     }
 
@@ -452,12 +465,13 @@ class IngApi {
      * @param {string} secretCode
      * @param {string} channelValue
      * @param {string} channelType
-     * @param {{fromAccount: string, toAccount: string, amount: number, label: string, executionDate: string} | null} transferRequest
+     * @param {{fromAccount: string, toAccount: string, amount: number, label: string, executionDate: string} | {accountHolderName: string, bankName:string, bic: string, iban: string} | null} request
      * @return {Promise<{acknowledged: boolean}>}
      */
-    async sendOneTimePassword(sensitiveOperationAction, secretCode, channelValue, channelType, transferRequest = null) {
+    async sendOneTimePassword(sensitiveOperationAction, secretCode, channelValue, channelType, request = null) {
         const body = {sensitiveOperationAction, secretCode, channelValue, channelType};
-        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && transferRequest) body.transactionRequest = transferRequest
+        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transactionRequest = request
+        else if (sensitiveOperationAction === this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY && request) body.externalAccountsRequest = request
         return await this.callIngSecureApi('sca/sendOtp', 'POST', body);
     }
 
@@ -465,12 +479,13 @@ class IngApi {
      * Confirm the one time password received
      * @param {string} sensitiveOperationAction
      * @param {string} oneTimePassword
-     * @param {{fromAccount: string, toAccount: string, amount: number, label: string, executionDate: string} | null} transferRequest
+     * @param {{fromAccount: string, toAccount: string, amount: number, label: string, executionDate: string} | {accountHolderName: string, bankName:string, bic: string, iban: string} | null} request
      * @return {Promise<{acknowledged: boolean}>}
      */
-    async confirmOneTimePassword(sensitiveOperationAction, oneTimePassword, transferRequest = null) {
+    async confirmOneTimePassword(sensitiveOperationAction, oneTimePassword, request = null) {
         const body = {sensitiveOperationAction, otp: oneTimePassword};
-        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && transferRequest) body.transactionRequest = transferRequest
+        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transactionRequest = request
+        else if (sensitiveOperationAction === this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY && request) body.externalAccountsRequest = request
         return await this.callIngSecureApi('sca/confirmOtp', 'POST', body);
     }
 
@@ -513,7 +528,7 @@ class IngApi {
 
         const executionDate = initiatedTransfer.executionSuggestedDate;
         const transferRequest = {fromAccount, toAccount, amount, label, executionDate};
-        this.transferRequest = transferRequest;
+        this.validationRequest.transactionRequest = transferRequest;
 
         const missingPasswordDigitsPositions = await this.getMissingPasswordDigitsPositionsSensitiveOperationAction(sensitiveOperationAction);
         const keypadImageBuffer = await this.getKeypadImageBufferSensitiveOperationAction(missingPasswordDigitsPositions.keyPadUrl);
@@ -554,18 +569,78 @@ class IngApi {
         return await this.callIngSecureApi(`transfers/v3/new/validate`, 'POST', body);
     }
 
+    /**
+     * Create and validate a new beneficiary, a 2FA verification is necessary
+     * @param {string} accountHolderName
+     * @param {string} iban
+     * @return {Promise<{acknowledged: boolean}|{error: {code: string, message: string, values: {}}}>}
+     */
+    async addNewBeneficiary(accountHolderName, iban) {
+        const sensitiveOperationAction = this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY;
+
+        const externalAccountRequest = await this.addExternalAccountRequest(accountHolderName, iban);
+
+        if (externalAccountRequest.error) return externalAccountRequest; // TODO : manage the error
+        this.validationRequest.externalAccountsRequest = externalAccountRequest;
+
+        const toggleScaStatusResponse = await this.toggleScaStatus(sensitiveOperationAction);
+        console.log(toggleScaStatusResponse);
+
+        const missingPasswordDigitsPositions = await this.getMissingPasswordDigitsPositionsSensitiveOperationAction(sensitiveOperationAction);
+        const keypadImageBuffer = await this.getKeypadImageBufferSensitiveOperationAction(missingPasswordDigitsPositions.keyPadUrl);
+
+        const passwordKeypad = new PasswordKeypad(keypadImageBuffer, 5);
+        const clickPositions = await passwordKeypad.getClicksPositions(missingPasswordDigitsPositions.pinPositions, this.password);
+
+        const validatePin = await this.validatePinSensitiveOperationAction(clickPositions, sensitiveOperationAction, externalAccountRequest);
+
+        const oneTimePasswordChannels = await this.getSensitiveOperationOneTimePasswordChannels(sensitiveOperationAction);
+        const otpSmsChannel = oneTimePasswordChannels.find(channel => channel.type === "SMS_MOBILE");
+
+        return this.sendOneTimePassword(sensitiveOperationAction, validatePin.secretCode, otpSmsChannel.phone, otpSmsChannel.type);
+
+    }
+
+    /**
+     * Send a request to initiate the external account addition process
+     * @param {string} accountHolderName
+     * @param {string} iban
+     * @return {Promise<{accountHolderName: string, bankName:string, bic: string, iban: string} | {error: {code: string, message:string, values:{}}}>}
+     */
+    async addExternalAccountRequest(accountHolderName, iban) {
+        const body = {accountHolderName, iban};
+        return await this.callIngSecureApi(`externalAccounts/add/validateRequest`, 'POST', body);
+    }
+
+    /**
+     * Toggle the strong customer authentication status to the given sensitive operation action
+     * @param {string} sensitiveOperationAction
+     * @return {Promise<Object>} TODO : vérifier le retour
+     */
+    async toggleScaStatus(sensitiveOperationAction) {
+        return await this.callIngSecureApi(`toggle/sca/status?action=${sensitiveOperationAction}`);
+    }
+
+    /**
+     * Delete a given beneficiary
+     * @param {string} beneficiaryId
+     * TODO : vérifier le retour
+     */
+    async deleteBeneficiary(beneficiaryId) {
+        return await this.callIngSecureApi(`externalAccounts/${beneficiaryId}`, 'DELETE');
+    }
+
     /*
     TODO :
     Endpoints :
         - Transaction check
         - Change card payment limits
-        - Add a beneficiary
-        - Remove a beneficiary
         - Cancel a recurrent transfer
         - Suspend a direct debit authorization
         - Make an international wire transfer
         - 2FA management (maybe an app to scan the SMS) : Partially done with mobile application
-        - Api responses model
+        - Api responses model : WIP
+        - Error management
      */
 
     /**

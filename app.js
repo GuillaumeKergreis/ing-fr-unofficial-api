@@ -17,10 +17,14 @@ async function smsValidation(req, res, next) {
     console.log(operation);
     console.log(code);
 
-    const result = await ingApi.confirmOneTimePassword(operation, code, ingApi.transferRequest);
+    let validationRequest = null;
+    if (operation === ingApi.SensitiveOperationAction.EXTERNAL_TRANSFER) validationRequest = ingApi.validationRequest.transactionRequest;
+    else if (operation === ingApi.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY) validationRequest = ingApi.validationRequest.externalAccountsRequest;
+
+    const result = await ingApi.confirmOneTimePassword(operation, code, validationRequest);
     console.log("confirmOneTimePassword", result);
 
-    res.json({success: true})
+    res.json(result);
 }
 
 app.listen(8080)
