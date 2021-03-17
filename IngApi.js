@@ -15,6 +15,12 @@ class IngApi {
     };
 
     ErrorCode = {
+        AUTHENTICATION: {
+            INVALID_CIF_AND_BIRTHDATE_COMBINATION: 'AUTHENTICATION.INVALID_CIF_AND_BIRTHDATE_COMBINATION'
+        },
+        SCA: {
+            STEP1_NOT_DONE: 'SCA.STEP1_NOT_DONE'
+        },
         EXTERNAL_ACCOUNT: {
             IBAN_BAD_FORMAT: 'EXTERNAL_ACCOUNT.IBAN_BAD_FORMAT',
             EXTERNAL_ACCOUNT_ALREADY_EXISTS: 'EXTERNAL_ACCOUNT.EXTERNAL_ACCOUNT_ALREADY_EXISTS'
@@ -68,7 +74,7 @@ class IngApi {
 
     /**
      * Post the customerId and the birthdate to complete the first authentication step
-     * @return {Promise<Object>}
+     * @return {Promise<{regieId: string, mustCreatePinCode: boolean}>}
      */
     async login() {
         const body = {cif: this.customerId, birthDate: this.birthdate};
@@ -77,11 +83,19 @@ class IngApi {
 
     /**
      * Returns the password digits missing positions
-     * @return {Promise<Object>}
+     * @return {Promise<{pinPositions: Array<number>}>}
      */
     async getMissingPasswordDigitsPositions() {
         const body = {keyPadSize: {width: 3800, height: 1520}, mode: ''};
         return await this.callIngSecureApi('login/keypad?v2=true', 'POST', body);
+    }
+
+    /**
+     * Returns the user information at the login step
+     * @return {Promise<{firstName: string, lastName:string, title: string, lastLogin: string}>}
+     */
+    async getLoginInformations() {
+        return await this.callIngSecureApi('login/informations');
     }
 
     /**
@@ -100,7 +114,7 @@ class IngApi {
     /**
      * Complete the last authentication step : send the positions in the keypad of the password missing digits
      * @param {Array<Array<number>>} clickPositions
-     * @return {Promise<Object>}
+     * @return {Promise<{strongAuthenticationLoginExempted: boolean}>}
      */
     async postLoginPinCode(clickPositions) {
         return await this.callIngSecureApi('login/sca/pin', 'POST', {clickPositions})
@@ -108,16 +122,24 @@ class IngApi {
 
     /**
      * Returns the accounts
-     * @return
+     * @return {Promise<{aggregatedBalance: number, businessDate: string, accounts: Array<{uid: string, label: string, ledgerBalance: number, availableBalance?: number, owner: string, type: {code: string, label: string}, role: {code: string, label: string}, ownership: {code: string, label: string}, acknowledgments: Array<>, inGoodStanding: boolean, hasPositiveBalance: boolean, accountStatus: string, checkingAccountActivationDate?: string, balanceLevels?: Array<>}>}>}
      */
     async getAccounts() {
         return await this.callIngSecureApi('accounts');
     }
 
     /**
+     * Returns the customer status
+     * @return {Promise<string>} TODO : check the real return
+     */
+    async getCustomerStatus() {
+        return await this.callIngSecureApi('customer/status');
+    }
+
+    /**
      * Returns the detains of a given account
      * @param {string} accountId
-     * @return {Promise<Object>}
+     * @return {Promise<{uid: string, label: string, ledgerBalance: number, availableBalance: number, owner: string, type: {code: string,label: string}, role:{code: string, label: string}, ownership:{code: string, label: string}, inGoodStanding:boolean, hasPositiveBalance:boolean, accountStatus:string, openingDate:string, overdraftAmount:number, estimatedBalance: {amount: number, estimationDate: string}}>}
      */
     async getAccountById(accountId) {
         return await this.callIngSecureApi(`accounts/${accountId}`);
@@ -126,7 +148,7 @@ class IngApi {
     /**
      * Returns the future operations on an account
      * @param {string} accountId
-     * @return {Promise<Object>}
+     * @return {Promise<{totalAmount: number, futureOperations: Array<Object>}>}
      */
     async getAccountFutureOperations(accountId) {
         return await this.callIngSecureApi(`accounts/${accountId}/futureOperations`);
@@ -134,7 +156,7 @@ class IngApi {
 
     /**
      * Returns the customer information
-     * @return {Promise<Object>}
+     * @return {Promise<{cif: string, title: string, emailAddress: string, mailingAddress: {address1: string, address2: string, address3: string, address4: string, city: string, postCode: string, country: string, npai: boolean}, name: {firstName: string, lastName: string}, phones: Array<{uid: string, number: string, type: string}>, birthDate: string, placeOfBirth: string, kyc: {netMonthlyIncomeLabel: string, patrimonyLabel: string, professionLabel: string, professionalStatusLabel: string, professionTypeLabel: string, currentEmployer: string, employerActivityLabel: string, realEstateAssetLabel: string}, isACreditRisk: boolean, isDAC: boolean, fiscalAddress: {address1: string, address2: string, address3: string, address4: string, city: string, postCode: string, country: string}, isMailingAdressSameThanFiscalAddress: boolean, customerIsFriendAndFamily: boolean}>}
      */
     async getCustomerInfo() {
         return await this.callIngSecureApi(`/customer/info`);
@@ -144,7 +166,7 @@ class IngApi {
      * Returns the received messages
      * @param {number} messagesPerPage
      * @param {number} pageNumber
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{messageId: number, dateOnLine: string, object: string, alreadyRead: boolean, severity: number}>>}
      */
     async getMessages(messagesPerPage = 30, pageNumber = 1) {
         return await this.callIngSecureApi(`customer/hermes?nbRowByPage=${messagesPerPage}&pageNumber=${messagesPerPage}`);
@@ -152,7 +174,7 @@ class IngApi {
 
     /**
      * Returns the total number of messages
-     * @return {Promise<Object>}
+     * @return {Promise<number>} TODO : check this return
      */
     async getNumberOfMessages() {
         return await this.callIngSecureApi(`customer/hermes/number`);
@@ -160,7 +182,7 @@ class IngApi {
 
     /**
      * Returns the number of unread messages
-     * @return {Promise<Object>}
+     * @return {Promise<number>} TODO : check this return
      */
     async getNumberOfUnreadMessages() {
         return await this.callIngSecureApi(`customer/hermes/number?hermesCountType=UNREAD`);
@@ -169,7 +191,7 @@ class IngApi {
     /**
      * Returns the content of a given message
      * @param {number} messageId
-     * @return {Promise<Object>}
+     * @return {Promise<{messageId: number, dateOnLine: string, object: string, content: string}>}
      */
     async getMessageContent(messageId) {
         return await this.callIngSecureApi(`customer/hermes/${messageId}/content`);
@@ -178,7 +200,7 @@ class IngApi {
     /**
      * Set a given message as read
      * @param {number} messageId
-     * @return {Promise<Object>}
+     * @return {Promise<{acknowledged: boolean}>}
      */
     async setMessageAsAlreadyRead(messageId) {
         return await this.callIngSecureApi(`customer/hermes/validate`, 'POST', messageId);
@@ -187,7 +209,7 @@ class IngApi {
     /**
      * Delete a given message
      * @param {number} messageId
-     * @return {Promise<Object>}
+     * @return {Promise<{acknowledged: boolean}>}
      */
     async deleteMessage(messageId) {
         return await this.callIngSecureApi(`customer/hermes/${messageId}`, 'DELETE');
@@ -206,7 +228,7 @@ class IngApi {
 
     /**
      * Returns the status of the aggregation agreement
-     * @return {Promise<Object>}
+     * @return {Promise<boolean>} TODO : check this return
      */
     async isAggregationTermsAndConditionsAccepted() {
         return await this.callIngSecureApi(`aggregation/isTermsAndConditionsAccepted`);
@@ -214,7 +236,7 @@ class IngApi {
 
     /**
      * Returns the status of the PSD2 aggregation agreement
-     * @return {Promise<Object>}
+     * @return {Promise<boolean>} TODO : check this return
      */
     async isAggregationPsd2TermsAndConditionsAccepted() {
         return await this.callIngSecureApi(`aggregation/psd2/isTermsAndConditionsAccepted`);
@@ -222,7 +244,7 @@ class IngApi {
 
     /**
      * Returns the session state (authenticated or not)
-     * @return {Promise<Object>}
+     * @return {Promise<{authenticated: boolean}>}
      */
     async getSession() {
         return await this.callIngSecureApi(`session`);
@@ -231,7 +253,7 @@ class IngApi {
     /**
      * Returns the bank record for a given account
      * @param {string} accountId
-     * @return {Promise<Object>}
+     * @return {Promise<{bic: string, iban: string, bankCode: string, counterCode: string, accountNumber: string, ribKey: string, ownerAddress: {name: string, address1: string, address2: string, address3: string, address4: string, city: string, postCode: string, country: string}, bankingDomiciliation: {name: string, address1: string, address2: string, address3:string, address4: string, city: string, postCode: string, country: string}}>}
      */
     async getAccountBankRecord(accountId) {
         return await this.callIngSecureApi(`accounts/${accountId}/bankRecord`);
@@ -240,7 +262,7 @@ class IngApi {
     /**
      * Returns the cards associated to an account
      * @param {string} accountId
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{uid: string, status: {code: string, label: string}, owner: {firstName: string, lastName: string, salutation: string}, expirationDate: number, renewalAllowed: boolean, contactless: boolean, number: string, type: {code: string, label: string}, mark: string, limitsChangedWithinTheDay: boolean, ownedByConnectedCustomer: boolean, opposedForMoreThanOneMonth: boolean}>>}
      */
     async getCards(accountId) {
         return await this.callIngSecureApi(`accounts/cards/v2/cards/${accountId}`);
@@ -250,7 +272,7 @@ class IngApi {
      * Returns the transactions associated to a card
      * @param {string} accountId
      * @param {string} cardId
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{transactionSequence: string, effectiveDate: number, amount: number, transactionDirection: string, description: string, preAuthorization: boolean}>>}
      */
     async getCardTransactions(accountId, cardId) {
         const body = {accountUid: accountId, cardUid: cardId}
@@ -261,7 +283,7 @@ class IngApi {
      * Returns the card functionalities access for a given card
      * @param {string} accountId
      * @param {string} cardId
-     * @return {Promise<Object>}
+     * @return {Promise<{CHANGE_PIN: {enabled: boolean, restrictionType: string}, CONTACTLESS: {enabled: boolean, restrictionType: string}, CARD_HARD_BLOCKING: {enabled: boolean, restrictionType: string}, CARD_LIMIT: {enabled: boolean, restrictionType: string}, CARD_RENEWAL: {enabled: boolean, restrictionType: string}, CHANGE_DEBIT_TYPE: {enabled: boolean, restrictionType: string}}>}
      */
     async getCardFunctionalitiesAccess(accountId, cardId) {
         const body = {
@@ -276,7 +298,7 @@ class IngApi {
      * Returns the card payment and withdraw limits
      * @param {string} accountId
      * @param {string} cardId
-     * @return {Promise<Object>}
+     * @return {Promise<{limits: Array<{type: string, authorized: number, available: number, used: number}>, acknowledged: boolean}>}
      */
     async getCardLimits(accountId, cardId) {
         const body = {accountUid: accountId, cardUid: cardId};
@@ -288,7 +310,7 @@ class IngApi {
      * @param {string} accountId
      * @param {string} cardId
      * @param {string} contactlessStatus (ON, OFF)
-     * @return {Promise<Object>}
+     * TODO : check void return
      */
     async setCardContactlessStatus(accountId, cardId, contactlessStatus = 'ON') {
         const body = {accountUid: accountId, cardUid: cardId, contactlessToggleStatus: contactlessStatus};
@@ -300,7 +322,7 @@ class IngApi {
      * @param {string} accountId
      * @param {string} cardId
      * @param {string} statusCode (LOCKED_BY_CLIENT, ACTIVATED)
-     * @return {Promise<Object>}
+     * @return {Promise<{acknowledged: boolean}>}
      */
     async setCardStatus(accountId, cardId, statusCode = 'ACTIVATED') {
         const body = {accountUniqueID: accountId, cardUid: cardId, statusCode: statusCode};
@@ -309,7 +331,7 @@ class IngApi {
 
     /**
      * Returns the future transfers
-     * @return {Promise<{pendingTransfers: Array<Object>, mobileReccuringTransfers: Array<Object>, nbPendingTransfers: number}>}
+     * @return {Promise<{pendingTransfers: Array<{uid: string, amount: number, label: string, mobilePeriodicity: {code: string, label: string}, executionDate: string, fromAccountUid: string, fromAccountLabel: string, fromAccountType: {code: string, label: string}, toExternalAccountUid: string, toAccountLabel: string, toAccountOwner: string, toAccountBankName: string, toAccountType: {code: string, label: string}, toAccountNotOwned: boolean, cancelable: boolean}>, mobileReccuringTransfers: Array<Object>, nbPendingTransfers: number}>}
      */
     async getFutureTransfers() {
         return await this.callIngSecureApi(`futureTransfers`);
@@ -317,7 +339,7 @@ class IngApi {
 
     /**
      * Returns the transfer debit accounts (checking account)
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{uid: string, label: string, ledgerBalance: number, availableBalance: number, owner: string, type: {code: string, label: string}, role: {code: string, label: string}, ownership: {code: string, label: string}, inGoodStanding: boolean, hasPositiveBalance: boolean}>>}
      */
     async getTransfersDebitAccounts() {
         return await this.callIngSecureApi(`transfers/debitAccounts`);
@@ -325,7 +347,7 @@ class IngApi {
 
     /**
      * Returns the life insurance external accounts
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{externalAccount: {uid: string, label: string, type: {code: string, label: string}, owner: string, bankName: string}, lifeInsuranceContractsUids: Array<string>}>>}
      */
     async getLifeInsuranceExternalAccounts() {
         return await this.callIngSecureApi(`lifeInsurance/externalAccounts`);
@@ -343,7 +365,7 @@ class IngApi {
     /**
      * Returns the past direct debit transactions for a given account
      * @param {string} accountId
-     * @return {Promise<Object>}
+     * @return {Promise<Array<{effectiveDate: string, creditorName: string, creditorId: string, reference: string, type: string, amount: number, status: string, action: string}>>}
      */
     async getAccountDirectDebitPastTransactions(accountId) {
         return await this.callIngSecureApi(`accounts/direct/debit/past/list/${accountId}`);
@@ -352,7 +374,7 @@ class IngApi {
     /**
      * Returns the direct debit pending transactions
      * @param {string} accountId
-     * @return {Promise<Object>}
+     * @return {Promise<Array<Object>>}
      */
     async getAccountDirectDebitPendingTransactions(accountId) {
         return await this.callIngSecureApi(`accounts/direct/debit/pending/list/${accountId}`);
@@ -377,7 +399,7 @@ class IngApi {
 
     /**
      * Generate a token to access the Save Invest API
-     * @return {Promise<Object>}
+     * @return {Promise<{token: string, cif: string}>}
      */
     async generateSaveInvestApiToken() {
         const res = await this.callIngSecureApi(`saveInvest/token/generate`);
@@ -388,7 +410,7 @@ class IngApi {
     /**
      * Returns the details for a life insurance contract
      * @param {string} contractId
-     * @return {Promise<Object>}
+     * @return {Promise<{id: string, holder: {firstName: string, lastName: string}, balance: {value: number, reachDate: string}, subscriptionDate: string, contractInvestment: Object<string, {isin: string, name: string, counterValue: number, allocationPercentage: number, gainOrLoss: number, partValue: number, partNumber: number, amount: number, dateValue: string, assetClass: number}>, managementMode: string, mandate?: {type: string, id: number}, netissimaPercent?: number}>}
      */
     async getLifeInsuranceContract(contractId) {
         return await this.callIngSaveInvestApi(`lifeinsurance/contract/${contractId}`);
@@ -397,7 +419,7 @@ class IngApi {
     /**
      * Returns the life insurance amounts for a given contract
      * @param {string} contractId
-     * @return {Promise<Object>}
+     * @return {Promise<{id: string, deposit: {totalDeposited: number, totalInvested: number}, withdrawal: number, capitalGains: number}>}
      */
     async getLifeInsuranceContractAmounts(contractId) {
         return await this.callIngSaveInvestApi(`lifeinsurance/contract/${contractId}?only=DEPOSIT,WITHDRAWAL,GAIN`);
@@ -407,7 +429,7 @@ class IngApi {
      * Returns the advice for a life insurance contract
      * @param {string} customerId
      * @param {string} contractId
-     * @return {Promise<Object>}
+     * @return {Promise<{questionnaireId: number, cif: string, contractId: string, date: string, riskProfile: string, profile: {type: string, selfAllocation: {type: string, allocation: {EUROS: {value: number}, SHARES: {value: number}, BOND: {value: number}}}, mandatedAllocation: {type: string, id: number, allocation: {EUROS: {value: number}, SHARES: {value: number, minValue: number, maxValue: number}, BOND: {value: number, minValue: number, maxValue: number}}}}, managementMode: string, status: string, flaggedProfile: boolean}>}
      */
     async getLifeInsuranceAdvice(customerId, contractId) {
         return await this.callIngSaveInvestApi(`lifeinsurance/advice/${customerId}/${contractId}`);
@@ -633,13 +655,11 @@ class IngApi {
     /*
     TODO :
     Endpoints :
-        - Transaction check
         - Change card payment limits
         - Cancel a recurrent transfer
         - Suspend a direct debit authorization
         - Make an international wire transfer
         - 2FA management (maybe an app to scan the SMS) : Partially done with mobile application
-        - Api responses model : WIP
         - Error management
      */
 
@@ -706,6 +726,20 @@ class IngApi {
         });
 
         return await res.json();
+    }
+}
+
+class IngApiError {
+    /**
+     * Create a new IngApiError instance
+     * @param {string} code
+     * @param {string} message
+     * @param {Object} values
+     */
+    constructor(code, message, values) {
+        this.code = code;
+        this.message = message;
+        this.values = values;
     }
 }
 
