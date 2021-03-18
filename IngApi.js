@@ -41,6 +41,7 @@ class IngApi {
 
         // This object is used to store the authentication state of the API
         this.session = {
+            regieId: null,
             cookie: null,
             authToken: null,
             saveInvestToken: null
@@ -59,7 +60,8 @@ class IngApi {
      * @return {Promise<Object>}
      */
     async connect() {
-        await this.login();
+        const loginResult = await this.loginWithCustomerIdAndBirthdate();
+        this.session.regieId = loginResult.regieId;
 
         const missingPasswordDigitsPositions = await this.getMissingPasswordDigitsPositions();
         const keypadImageBuffer = await this.getKeypadImageBuffer();
@@ -76,8 +78,17 @@ class IngApi {
      * Post the customerId and the birthdate to complete the first authentication step
      * @return {Promise<{regieId: string, mustCreatePinCode: boolean}>}
      */
-    async login() {
+    async loginWithCustomerIdAndBirthdate() {
         const body = {cif: this.customerId, birthDate: this.birthdate};
+        return await this.callIngSecureApi('login/cif?v2=true', 'POST', body);
+    }
+
+    /**
+     * Post the regieId and the birthdate to complete the first authentication step
+     * @return {Promise<{regieId: string, mustCreatePinCode: boolean}>}
+     */
+    async loginWithRegieIdAndBirthdate() {
+        const body = {regieId: this.regieId, birthDate: this.birthdate};
         return await this.callIngSecureApi('login/cif?v2=true', 'POST', body);
     }
 
