@@ -38,7 +38,7 @@ npm install
 ### 1. Import the IngApi module in your project
 
 ```javascript
-const IngApi = require('./IngApi');
+const ingApi = require('./IngApi');
 ```
 
 ### 2. Declare your ING credentials

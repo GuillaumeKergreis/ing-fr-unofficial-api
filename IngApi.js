@@ -19,7 +19,8 @@ class IngApi {
             INVALID_CIF_AND_BIRTHDATE_COMBINATION: 'AUTHENTICATION.INVALID_CIF_AND_BIRTHDATE_COMBINATION'
         },
         SCA: {
-            STEP1_NOT_DONE: 'SCA.STEP1_NOT_DONE'
+            STEP1_NOT_DONE: 'SCA.STEP1_NOT_DONE',
+            LOGOUT: 'SCA.LOGOUT'
         },
         EXTERNAL_ACCOUNT: {
             IBAN_BAD_FORMAT: 'EXTERNAL_ACCOUNT.IBAN_BAD_FORMAT',
@@ -49,7 +50,7 @@ class IngApi {
 
         // TODO : manage better this side effect
         this.validationRequest = {
-            transactionRequest: null,
+            transferRequest: null,
             externalAccountsRequest: null
         };
 
@@ -57,10 +58,11 @@ class IngApi {
 
     /**
      * This method realize the authentication process to initialize the session state
-     * @return {Promise<Object>}
+     * @param {Promise<{regieId: string, mustCreatePinCode: boolean}>} loginMethod
+     * @return {Promise<{authenticated: boolean}>}
      */
-    async connect() {
-        const loginResult = await this.loginWithCustomerIdAndBirthdate();
+    async connect(loginMethod = this.loginWithCustomerIdAndBirthdate()) {
+        const loginResult = await loginMethod;
         this.session.regieId = loginResult.regieId;
 
         const missingPasswordDigitsPositions = await this.getMissingPasswordDigitsPositions();
@@ -88,7 +90,7 @@ class IngApi {
      * @return {Promise<{regieId: string, mustCreatePinCode: boolean}>}
      */
     async loginWithRegieIdAndBirthdate() {
-        const body = {regieId: this.regieId, birthDate: this.birthdate};
+        const body = {regieId: this.session.regieId, birthDate: this.birthdate};
         return await this.callIngSecureApi('login/cif?v2=true', 'POST', body);
     }
 
@@ -487,8 +489,8 @@ class IngApi {
      */
     async validatePinSensitiveOperationAction(clickPositions, sensitiveOperationAction, request = null) {
         const body = {keyPad: {clickPositions: clickPositions}, sensitiveOperationAction: sensitiveOperationAction};
-        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transactionRequest = request
-        else if (sensitiveOperationAction === this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY && request) body.externalAccountsRequest = request
+        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transferRequest = request;
+        else if (sensitiveOperationAction === this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY && request) body.externalAccountsRequest = request;
         return await this.callIngSecureApi('sca/validatePin', 'POST', body);
     }
 
@@ -503,7 +505,7 @@ class IngApi {
      */
     async sendOneTimePassword(sensitiveOperationAction, secretCode, channelValue, channelType, request = null) {
         const body = {sensitiveOperationAction, secretCode, channelValue, channelType};
-        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transactionRequest = request
+        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transferRequest = request
         else if (sensitiveOperationAction === this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY && request) body.externalAccountsRequest = request
         return await this.callIngSecureApi('sca/sendOtp', 'POST', body);
     }
@@ -517,7 +519,7 @@ class IngApi {
      */
     async confirmOneTimePassword(sensitiveOperationAction, oneTimePassword, request = null) {
         const body = {sensitiveOperationAction, otp: oneTimePassword};
-        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transactionRequest = request
+        if (sensitiveOperationAction === this.SensitiveOperationAction.EXTERNAL_TRANSFER && request) body.transferRequest = request
         else if (sensitiveOperationAction === this.SensitiveOperationAction.ADD_TRANSFER_BENEFICIARY && request) body.externalAccountsRequest = request
         return await this.callIngSecureApi('sca/confirmOtp', 'POST', body);
     }
@@ -554,14 +556,18 @@ class IngApi {
      * @param {string} desiredExecutionDate - Desired execution date with format "YYYY-MM-DD"
      * @return {Promise<{acknowledged: boolean}>}
      */
-    async makeTransfer(fromAccount, toAccount, amount, label, desiredExecutionDate = '') {
+    async makeTransfer(fromAccount, toAccount, amount, label = '', desiredExecutionDate = '') {
         const sensitiveOperationAction = this.SensitiveOperationAction.EXTERNAL_TRANSFER;
 
         const initiatedTransfer = await this.validateNewTransfer(fromAccount, toAccount, amount, label, desiredExecutionDate);
 
-        const executionDate = initiatedTransfer.executionSuggestedDate;
+        const executionSuggestedDateDay = initiatedTransfer.executionSuggestedDate.substr(0, 2);
+        const executionSuggestedDateMonth = initiatedTransfer.executionSuggestedDate.substr(3, 2);
+        const executionSuggestedDateYear = initiatedTransfer.executionSuggestedDate.substr(6, 4);
+
+        const executionDate = `${executionSuggestedDateYear}-${executionSuggestedDateMonth}-${executionSuggestedDateDay}`;
         const transferRequest = {fromAccount, toAccount, amount, label, executionDate};
-        this.validationRequest.transactionRequest = transferRequest;
+        this.validationRequest.transferRequest = transferRequest;
 
         const missingPasswordDigitsPositions = await this.getMissingPasswordDigitsPositionsSensitiveOperationAction(sensitiveOperationAction);
         const keypadImageBuffer = await this.getKeypadImageBufferSensitiveOperationAction(missingPasswordDigitsPositions.keyPadUrl);
@@ -574,8 +580,7 @@ class IngApi {
         const oneTimePasswordChannels = await this.getSensitiveOperationOneTimePasswordChannels(sensitiveOperationAction);
         const otpSmsChannel = oneTimePasswordChannels.find(channel => channel.type === "SMS_MOBILE");
 
-        return this.sendOneTimePassword(sensitiveOperationAction, validatePin.secretCode, otpSmsChannel.phone, otpSmsChannel.type);
-
+        return await this.sendOneTimePassword(sensitiveOperationAction, validatePin.secretCode, otpSmsChannel.phone, otpSmsChannel.type, transferRequest);
     }
 
     /**
@@ -596,8 +601,9 @@ class IngApi {
      * @param {string} executionDate
      * @return {Promise<{executionSuggestedDate: string}>}
      */
-    async validateNewTransfer(fromAccount, toAccount, amount, label, executionDate = '') {
-        const body = {fromAccount, toAccount, amount, label, keyPadSize: {width: 3800, height: 1520}};
+    async validateNewTransfer(fromAccount, toAccount, amount, label = '', executionDate = '') {
+        const body = {fromAccount, toAccount, amount, keyPadSize: {width: 3800, height: 1520}};
+        if (label) body.label = label;
         if (executionDate) body.executionDate = executionDate;
         return await this.callIngSecureApi(`transfers/v3/new/validate`, 'POST', body);
     }
@@ -638,7 +644,7 @@ class IngApi {
      * Send a request to initiate the external account addition process
      * @param {string} accountHolderName
      * @param {string} iban
-     * @return {Promise<{accountHolderName: string, bankName:string, bic: string, iban: string} | {error: {code: string, message:string, values:{}}}>}
+     * @return {Promise<{accountHolderName: string, bankName:string, bic: string, iban: string}|{error: {code: string, message:string, values:{}}}>}
      */
     async addExternalAccountRequest(accountHolderName, iban) {
         const body = {accountHolderName, iban};
@@ -685,8 +691,8 @@ class IngApi {
 
     /**
      * Call the ING Secure API given a path, method and body
-     * @param {String} path
-     * @param {String} method
+     * @param {string} path
+     * @param {string} method
      * @param {Object} body
      * @return {Promise<Object>}
      */
@@ -712,9 +718,43 @@ class IngApi {
     }
 
     /**
+     * Refresh the session tokens if expired and regenerate authentication token
+     * @return {Promise<{authenticated: boolean}|{error: {code: string, message:string, values:{}}}>}
+     */
+    async refreshSession() {
+
+        const session = await this.getSession();
+        if (session.authenticated) {
+            console.log("Connection recovered with session");
+            return session;
+        }
+
+        try {
+            const connectWithRegieIdResult = await this.connect(this.loginWithRegieIdAndBirthdate());
+            if (connectWithRegieIdResult.authenticated) {
+                console.log("Connection recovered with loginWithRegieIdAndBirthdate");
+                return connectWithRegieIdResult;
+            }
+        } catch (e) {
+            console.log("Error whit loginWithRegieIdAndBirthdate, trying connectWithCustomerIdResult");
+        }
+
+        try {
+            const connectWithCustomerIdResult = await this.connect(this.loginWithCustomerIdAndBirthdate());
+            if (connectWithCustomerIdResult.authenticated) {
+                console.log("Connection recovered with loginWithCustomerIdAndBirthdate");
+                return connectWithCustomerIdResult;
+            }
+        } catch (e) {
+            console.log(e);
+        }
+
+    }
+
+    /**
      * Call the ING Save Invest API given a path, method and body
-     * @param {String} path
-     * @param {String} method
+     * @param {string} path
+     * @param {string} method
      * @param {Object} body
      * @return {Promise<Object>}
      */
